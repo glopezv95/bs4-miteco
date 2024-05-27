@@ -4,12 +4,11 @@ import requests
 from bs4 import BeautifulSoup
 import re
 import pandas as pd
-from tqdm import tqdm
 
 load_dotenv()
 API_KEY = os.getenv('API_KEY')
 SEARCH_ENGINE_ID = os.getenv('SEARCH_ENGINE_ID')
-NUM_REQUESTS = 6
+NUM_REQUESTS = 60
 
 def get_homepage(name:str) -> str:
     
@@ -30,42 +29,35 @@ def get_homepage(name:str) -> str:
 
     return output
 
-def get_emails(url:str):
+def get_emails(url:str) -> str:
+    
+    response = requests.get(url)
+    soup = BeautifulSoup(response.text, 'html.parser')
+    print(soup)
     
     emails = []
     
-    try:
-    
-        response = requests.get(url)
-        soup = BeautifulSoup(response.text, 'html.parser')
+    for link in soup.findAll("a", attrs = {"href": re.compile("^mailto:")}):
         
-        for link in soup.findAll("a", attrs = {"href": re.compile("^mailto:")}):
-            
-            email = str(link.get('href').replace('mailto:', ''))
-            emails.append(email)
-    
-    except:
-        pass
-    
+        email = link.get('href').replace('mailto:', '')
+        emails.append(email)
+        
     return emails
 
-def populate_email() -> None:
+def populate_email() -> list:
     
     df = pd.read_excel('entities.xlsx')
-    df_filtered = df[df['homepage'] != '']
+    df_filtered = df[df['emails'] != ''] if df['emails'] else df['emails'] == ''    
     
-    for index, row in tqdm(df_filtered.iterrows()):
+    for i in range(NUM_REQUESTS):
         
-        entity_name = row['NOMBRE ORGANIZACIÓN']
-        homepage = get_homepage(name=entity_name)['link']
-        df_filtered.loc[index, 'homepage'] = homepage
-    
-    merged_df = df.merge(
-        df_filtered[['NOMBRE ORGANIZACIÓN', 'emails']],
-        on='NOMBRE ORGANIZACIÓN',
-        how='left')
-    
-    merged_df.to_csv('output.csv', index=False)
+        entity_name = list(df_filtered['NOMBRE ORGANIZACIÓN'])[i]
+        url = get_homepage(name = entity_name)
+        emails = ', '.join(get_emails(url=url))
+        df_filtered['emails'][i] = emails
+        
+    df.join(df_filtered[['NOMBRE ORGANIZACIÓN', 'emails']], on='NOMBRE ORGANIZACIÓN')
+    df.to_csv('output.csv')
         
 
 if __name__ == '__main__':
